@@ -1,4 +1,4 @@
-name: Build sys-tune and overlay
+name: Build Streamfin
 
 on: [push, pull_request]
 jobs:
@@ -17,15 +17,15 @@ jobs:
       run: |
         make -j$(nproc)
         mkdir -p dist/switch/.overlays
-        mkdir -p dist/atmosphere/contents/4200000000000000/flags
-        touch dist/atmosphere/contents/4200000000000000/flags/boot2.flag
-        cp sys-tune/sys-tune.nsp dist/atmosphere/contents/4200000000000000/exefs.nsp
-        cp sys-tune/toolbox.json dist/atmosphere/contents/4200000000000000/
-        cp overlay/sys-tune-overlay.ovl dist/switch/.overlays/
+        mkdir -p dist/atmosphere/contents/420000000046494E/flags
+        touch dist/atmosphere/contents/420000000046494E/flags/boot2.flag
+        cp sys-tune/sys-tune.nsp dist/atmosphere/contents/420000000046494E/exefs.nsp
+        cp sys-tune/toolbox.json dist/atmosphere/contents/420000000046494E/
+        cp overlay/streamfin-overlay.ovl dist/switch/.overlays/
 
     - name: Deploy
       if: ${{ github.event_name != 'pull_request' && github.event.action != 'unassigned' }}
       uses: actions/upload-artifact@master
       with:
-        name: sys-tune
+        name: Streamfin
         path: dist

@@ -15,4 +15,7 @@ namespace sdmc {
 
     Result CreateFolder(const char* path);
 
+    // Create (overwrite) a file and write the whole buffer. For logs/config.
+    Result WriteFile(const char* path, const void* data, size_t size);
+
 }

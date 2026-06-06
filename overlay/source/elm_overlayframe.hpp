@@ -8,7 +8,7 @@
  * @brief The base frame which can contain another view
  *
  */
-class SysTuneOverlayFrame final : public tsl::elm::Element {
+class StreamfinOverlayFrame final : public tsl::elm::Element {
 public:
     /**
      * @brief Constructor
@@ -16,13 +16,13 @@ public:
      * @param title Name of the Overlay drawn bolt at the top
      * @param subtitle Subtitle drawn bellow the title e.g version number
      */
-    SysTuneOverlayFrame() : tsl::elm::Element() {}
+    StreamfinOverlayFrame() : tsl::elm::Element() {}
 
     void draw(tsl::gfx::Renderer *renderer) override {
         renderer->fillScreen(a(tsl::style::color::ColorFrameBackground));
         renderer->drawRect(tsl::cfg::FramebufferWidth - 1, 0, 1, tsl::cfg::FramebufferHeight, a(0xF222));
 
-        renderer->drawString("ovl-tune \u266B", false, 20, 50, 30, a(tsl::style::color::ColorText));
+        renderer->drawString("Streamfin \u266B", false, 20, 50, 30, a(tsl::style::color::ColorText));
         renderer->drawString(VERSION, false, 20, 70, 15, a(tsl::style::color::ColorDescription));
 
         renderer->drawRect(15, tsl::cfg::FramebufferHeight - 73, tsl::cfg::FramebufferWidth - 30, 1, a(tsl::style::color::ColorText));

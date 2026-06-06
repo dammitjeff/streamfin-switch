@@ -2,7 +2,11 @@
 
 #include "elm_overlayframe.hpp"
 #include "config/config.hpp"
+#include "jelly_ovl.hpp"
+#include "meta_cache.hpp"
 #include "tune.h"
+
+#include <algorithm>
 
 namespace {
 
@@ -93,16 +97,34 @@ PlaylistGui::PlaylistGui() {
             found = true;
         }
 
-        char *str = path;
-        size_t length   = std::strlen(str);
-        NullLastDot(str);
-        for (size_t i = length; i >= 0; i--) {
-            if (str[i] == '/') {
-                str = str + i + 1;
-                break;
+        // Resolve a display name: Jellyfin tracks -> "Title - Artist" (via metadata),
+        // SD files -> filename without path/extension.
+        char display[256];
+        bool needs_resolve = false;
+        std::string resolve_id;
+        if (!std::strncmp(path, "jelly://", 8)) {
+            // Resolve "Title - Artist" via the background cache. Cache miss ->
+            // show a placeholder now and fill it in from update() when it lands
+            // (NEVER block the UI thread; a 297-track queue would freeze for ~30s).
+            const char *id = std::strrchr(path, '/');
+            id = id ? id + 1 : path + 8;
+            if (!(meta_cache::Get(id, display, sizeof display) && display[0])) {
+                std::snprintf(display, sizeof display, "Loading...");
+                needs_resolve = true;
+                resolve_id = id;
             }
+        } else {
+            char *p = path;
+            size_t length = std::strlen(p);
+            NullLastDot(p);
+            for (size_t i = length; i + 1 > 0; i--) {
+                if (p[i] == '/') { p = p + i + 1; break; }
+            }
+            std::snprintf(display, sizeof display, "%s", p);
         }
+        char *str = display;
         auto item = new ButtonListItem(str, "\uE098");
+        if (needs_resolve) this->m_pending_names.emplace_back(item, resolve_id);
         item->setClickListener([this, item](u64 keys) -> bool {
             // adjust index for above CategoryHeader.
             const auto index = this->m_list->getIndexInList(item);
@@ -114,6 +136,11 @@ PlaylistGui::PlaylistGui() {
             }
             else if (keys & HidNpadButton_Y) {
                 if (R_SUCCEEDED(tuneRemove(tune_index))) {
+                    // Drop this row from the pending-name list before it's freed.
+                    this->m_pending_names.erase(
+                        std::remove_if(this->m_pending_names.begin(), this->m_pending_names.end(),
+                                       [item](const std::pair<tsl::elm::ListItem *, std::string> &e) { return e.first == item; }),
+                        this->m_pending_names.end());
                     this->removeFocus();
                     this->m_list->removeIndex(index);
                     auto element = this->m_list->getItemAtIndex(index + 1);
@@ -130,6 +157,7 @@ PlaylistGui::PlaylistGui() {
             }
             else if (keys & HidNpadButton_X) {
                 if (R_SUCCEEDED(tuneClearQueue())) {
+                    this->m_pending_names.clear();   // all rows about to be freed
                     this->removeFocus();
                     this->m_list->clear();
                     m_list->addItem(new tsl::elm::ListItem("Playlist empty."));
@@ -156,7 +184,7 @@ PlaylistGui::PlaylistGui() {
 }
 
 tsl::elm::Element *PlaylistGui::createUI() {
-    auto rootFrame = new SysTuneOverlayFrame();
+    auto rootFrame = new StreamfinOverlayFrame();
 
     rootFrame->setContent(this->m_list);
     rootFrame->setDescription("\uE0E1  Back     \uE0E0  Play   \uE0E3  Remove");
@@ -165,6 +193,20 @@ tsl::elm::Element *PlaylistGui::createUI() {
 }
 
 void PlaylistGui::update()  {
+    /* Fill in any track names the background resolver has finished. */
+    if (!this->m_pending_names.empty()) {
+        char buf[256];
+        for (size_t i = 0; i < this->m_pending_names.size(); ) {
+            if (meta_cache::Get(this->m_pending_names[i].second.c_str(), buf, sizeof buf) && buf[0]) {
+                this->m_pending_names[i].first->setText(buf);
+                this->m_pending_names[i] = this->m_pending_names.back();
+                this->m_pending_names.pop_back();
+            } else {
+                ++i;
+            }
+        }
+    }
+
     if (g_focus_item) {
         // wait until its added to the list.
         const auto index = m_list->getIndexInList(g_focus_item);

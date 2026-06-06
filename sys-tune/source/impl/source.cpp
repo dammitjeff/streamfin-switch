@@ -1,8 +1,52 @@
 #include "source.hpp"
 
 #include "sdmc/sdmc.hpp"
+#include "../jelly_net.hpp"
 
 #include <cstring>
+#include <cstdio>
+#include <cstdlib>
+#include <string>
+
+// ----- byte backends behind Source -----
+namespace {
+
+    class FileBackend final : public IoBackend {
+        FsFile m_file;
+      public:
+        FileBackend(FsFile &&file) : m_file(file) {}
+        ~FileBackend() override { fsFileClose(&m_file); }
+        u64 read(s64 offset, void *buf, u64 size) override {
+            u64 br = 0;
+            if (R_FAILED(fsFileRead(&m_file, offset, buf, size, 0, &br))) return 0;
+            return br;
+        }
+        s64 size() override {
+            s64 sz = 0;
+            if (R_FAILED(fsFileGetSize(&m_file, &sz))) return 0;
+            return sz;
+        }
+    };
+
+    // Persistent streaming HTTP backend: one connection, sequential reads, reopen
+    // only on seek. Fixes the per-chunk-reconnect audio gaps.
+    class HttpBackend final : public IoBackend {
+        jelly::Stream m_stream;
+      public:
+        HttpBackend(const char *path) : m_stream(path) {}
+        u64 read(s64 offset, void *buf, u64 size) override {
+            long n = m_stream.read(offset, buf, (long)size);
+            return (n > 0) ? (u64)n : 0;
+        }
+        s64 size() override {
+            return m_stream.total();
+        }
+    };
+
+}
+
+std::unique_ptr<IoBackend> MakeFileBackend(FsFile &&file) { return std::make_unique<FileBackend>(std::move(file)); }
+std::unique_ptr<IoBackend> MakeHttpBackend(const char *path) { return std::make_unique<HttpBackend>(path); }
 
 // NOTE: when updating dr_libs, check for TUNE-FIX comment for patches.
 #ifdef WANT_FLAC
@@ -129,15 +173,15 @@ namespace {
 
 }
 
-Source::Source(FsFile &&file) : m_file(file), m_offset(0), m_size(0) {
-    file = {};
+Source::Source(std::unique_ptr<IoBackend> backend) : m_backend(std::move(backend)), m_offset(0), m_size(0) {
     m_buffered.off = m_buffered.size = 0;
-    if (R_FAILED(fsFileGetSize(&this->m_file, &this->m_size)))
+    this->m_size = this->m_backend ? this->m_backend->size() : 0;
+    if (this->m_size < 0)
         this->m_size = 0;
 }
 
 Source::~Source() {
-    fsFileClose(&this->m_file);
+    this->m_backend.reset();   // closes the file / socket state
     this->m_offset = 0;
     this->m_size   = 0;
 }
@@ -215,7 +259,7 @@ size_t Source::ReadFile(void *_buffer, size_t read_size) {
 
         // if the dst dst is big enough, read data in place.
         if (read_size >= sizeof(m_buffered.data)) {
-            if (R_SUCCEEDED(fsFileRead(&this->m_file, this->m_offset, dst, read_size, 0, &bytes_read)) && bytes_read) {
+            if ((bytes_read = this->m_backend->read(this->m_offset, dst, read_size)) != 0) {
                 read_size -= bytes_read;
                 m_offset += bytes_read;
                 amount += bytes_read;
@@ -227,7 +271,7 @@ size_t Source::ReadFile(void *_buffer, size_t read_size) {
                 m_buffered.size = max_advance;
                 std::memcpy(m_buffered.data, dst - max_advance, max_advance);
             }
-        } else if (R_SUCCEEDED(fsFileRead(&this->m_file, this->m_offset, m_buffered.data, sizeof(m_buffered.data), 0, &bytes_read)) && bytes_read) {
+        } else if ((bytes_read = this->m_backend->read(this->m_offset, m_buffered.data, sizeof(m_buffered.data))) != 0) {
             const auto max_advance = std::min(read_size, bytes_read);
             std::memcpy(dst, m_buffered.data, max_advance);
 
@@ -284,7 +328,7 @@ class FlacFile final : public Source {
     drflac *m_flac;
 
   public:
-    FlacFile(FsFile &&file) : Source(std::move(file)) {
+    FlacFile(std::unique_ptr<IoBackend> backend) : Source(std::move(backend)) {
         this->m_flac = drflac_open(ReadCallback, FlacSeekCallback, FlacTellCallback, this, flac_alloc_ptr);
     }
     ~FlacFile() {
@@ -332,7 +376,7 @@ class Mp3File final : public Source {
     u64 m_total_frame_count;
 
   public:
-    Mp3File(FsFile &&file) : Source(std::move(file)) {
+    Mp3File(std::unique_ptr<IoBackend> backend) : Source(std::move(backend)) {
         if (drmp3_init(&this->m_mp3, ReadCallback, Mp3SeekCallback, Mp3TellCallback, nullptr, this, mp3_alloc_ptr)) {
             this->m_total_frame_count = drmp3_get_pcm_frame_count(&this->m_mp3);
             this->initialized         = true;
@@ -383,7 +427,7 @@ class WavFile final : public Source {
     s32 m_bytes_per_pcm;
 
   public:
-    WavFile(FsFile &&file) : Source(std::move(file)) {
+    WavFile(std::unique_ptr<IoBackend> backend) : Source(std::move(backend)) {
         if (drwav_init(&this->m_wav, ReadCallback, WavSeekCallback, WavTellCallback, this, wav_alloc_ptr)) {
             this->m_bytes_per_pcm = drwav_get_bytes_per_pcm_frame(&this->m_wav);
             this->initialized     = true;
@@ -427,39 +471,72 @@ class WavFile final : public Source {
 };
 #endif
 
+namespace {
+    // Construct the right decoder over a ready backend. Backend is consumed.
+    std::unique_ptr<Source> make_decoder(SourceType type, std::unique_ptr<IoBackend> backend) {
+        if (!backend) return nullptr;
+        if (false) {}
+#ifdef WANT_MP3
+        else if (type == SourceType::MP3)  return std::make_unique<Mp3File>(std::move(backend));
+#endif
+#ifdef WANT_FLAC
+        else if (type == SourceType::FLAC) return std::make_unique<FlacFile>(std::move(backend));
+#endif
+#ifdef WANT_WAV
+        else if (type == SourceType::WAV)  return std::make_unique<WavFile>(std::move(backend));
+#endif
+        return nullptr;
+    }
+}
+
 std::unique_ptr<Source> OpenFile(const char *path) {
     const auto type = GetSourceType(path);
     if (type == SourceType::NONE)
         return nullptr;
 
     FsFile file;
-
     if (R_FAILED(sdmc::OpenFile(&file, path)))
         return nullptr;
 
-    if (false) {}
-#ifdef WANT_MP3
-    else if (type == SourceType::MP3) {
-        return std::make_unique<Mp3File>(std::move(file));
-    }
-#endif
-#ifdef WANT_FLAC
-    else if (type == SourceType::FLAC) {
-        return std::make_unique<FlacFile>(std::move(file));
-    }
-#endif
-#ifdef WANT_WAV
-    else if (type == SourceType::WAV) {
-        return std::make_unique<WavFile>(std::move(file));
-    }
-#endif
-    else {
-        fsFileClose(&file);
+    // backend takes ownership of the file (closes it in its dtor).
+    return make_decoder(type, MakeFileBackend(std::move(file)));
+}
+
+bool IsJellyPath(const char *path) {
+    return std::strncmp(path, "jelly://", 8) == 0;
+}
+
+std::unique_ptr<Source> OpenJelly(const char *path) {
+    // path = "jelly://<fmt>/<id>"
+    const auto type = GetSourceType(path);
+    if (type == SourceType::NONE)
         return nullptr;
-    }
+
+    // Pick up the latest signed-in server + token from the SD config.
+    jelly::LoadConfig();
+
+    const char *rest  = path + 8;             // "<fmt>/<id>"
+    const char *slash = std::strchr(rest, '/');
+    if (!slash || !slash[1])
+        return nullptr;
+    const char *id = slash + 1;
+
+    // direct-play request path; token is sent in the auth header by jelly_net.
+    char req[192];
+    std::snprintf(req, sizeof req, "/Audio/%s/stream?static=true", id);
+
+    return make_decoder(type, MakeHttpBackend(req));
 }
 
 SourceType GetSourceType(const char* path) {
+    if (IsJellyPath(path)) {
+        const char *fmt = path + 8;           // "<fmt>/..."
+        if (!strncasecmp(fmt, "mp3/", 4))  return SourceType::MP3;
+        if (!strncasecmp(fmt, "flac/", 5)) return SourceType::FLAC;
+        if (!strncasecmp(fmt, "wav/", 4))  return SourceType::WAV;
+        return SourceType::NONE;
+    }
+
     const auto ext = std::strrchr(path, '.');
     if (!ext) {
         return SourceType::NONE;

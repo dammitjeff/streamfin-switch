@@ -71,7 +71,7 @@ BrowserGui::~BrowserGui() {
 }
 
 tsl::elm::Element *BrowserGui::createUI() {
-    m_frame = new SysTuneOverlayFrame();
+    m_frame = new StreamfinOverlayFrame();
 
     m_frame->setDescription("\uE0E1  Back     \uE0E0  Add    \uE0E2  Add All");
     m_frame->setContent(this->m_list);

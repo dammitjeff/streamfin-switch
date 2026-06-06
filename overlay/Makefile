@@ -37,11 +37,11 @@ include $(DEVKITPRO)/libnx/switch_rules
 #   of a homebrew executable (.nro). This is intended to be used for sysmodules.
 #   NACP building is skipped as well.
 #---------------------------------------------------------------------------------
-APP_TITLE	:=	sys-tune
+APP_TITLE	:=	Streamfin
 
-TARGET		:=	sys-tune-overlay
+TARGET		:=	streamfin-overlay
 BUILD		:=	build
-SOURCES		:=	source ../ipc ../common/minIni ../common/sdmc ../common/config ../common/pm ../common/aud
+SOURCES		:=	source ../ipc ../common ../common/minIni ../common/sdmc ../common/config ../common/pm ../common/aud
 DATA		:=	data
 INCLUDES	:=	lib/include ../ipc ../common
 APP_VERSION	:=	$(VERSION)
@@ -76,12 +76,18 @@ CFLAGS	:=	-g -Wall -Wno-format-truncation -O2 -ffunction-sections \
 CFLAGS	+=	$(INCLUDE) -DVERSION=\"v$(APP_VERSION)\" -DTUNE_API_VERSION=$(API_VERSION) -DNDEBUG=1 \
 			$(WANT_FLAGS)
 
+# Overlay debug log -> sdmc:/jelly_ovl.log. Off by default; build with
+# `make JELLY_DEBUG=1` (propagates from the top-level Makefile too) to enable.
+ifeq ($(JELLY_DEBUG),1)
+CFLAGS	+=	-DJELLY_DEBUG=1
+endif
+
 CXXFLAGS	:= $(CFLAGS) -fno-exceptions -std=c++23
 
 ASFLAGS	:=	-g $(ARCH)
 LDFLAGS	=	-specs=$(DEVKITPRO)/libnx/switch.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map)
 
-LIBS	:= -lnx
+LIBS	:= -lturbojpeg -lnx
 
 #---------------------------------------------------------------------------------
 # list of directories containing libraries, this must be the top level containing

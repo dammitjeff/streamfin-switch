@@ -44,4 +44,17 @@ namespace sdmc {
         return fsFsCreateDirectory(&sdmc, path_buffer);
     }
 
+    Result WriteFile(const char* path, const void* data, size_t size) {
+        std::strcpy(path_buffer, path);
+        fsFsDeleteFile(&sdmc, path_buffer);   // ignore error if absent
+        Result rc = fsFsCreateFile(&sdmc, path_buffer, (s64)size, 0);
+        if (R_FAILED(rc)) return rc;
+        FsFile file;
+        rc = fsFsOpenFile(&sdmc, path_buffer, FsOpenMode_Write, &file);
+        if (R_FAILED(rc)) return rc;
+        rc = fsFileWrite(&file, 0, data, size, FsWriteOption_Flush);
+        fsFileClose(&file);
+        return rc;
+    }
+
 }

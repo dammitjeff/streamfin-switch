@@ -6,7 +6,7 @@
 
 class BrowserGui final : public tsl::Gui {
   private:
-    SysTuneOverlayFrame* m_frame;
+    StreamfinOverlayFrame* m_frame;
     tsl::elm::List *m_list;
     FsFileSystem m_fs;
     bool has_music;

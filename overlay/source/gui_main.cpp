@@ -4,6 +4,9 @@
 #include "elm_volume.hpp"
 #include "gui_browser.hpp"
 #include "gui_playlist.hpp"
+#include "gui_keyboard.hpp"
+#include "gui_settings.hpp"
+#include "gui_picker.hpp"
 #include "pm/pm.hpp"
 #include "config/config.hpp"
 
@@ -16,17 +19,17 @@ MainGui::MainGui() {
 }
 
 tsl::elm::Element *MainGui::createUI() {
-    auto frame = new SysTuneOverlayFrame();
+    auto frame = new StreamfinOverlayFrame();
     auto list  = new tsl::elm::List();
 
     u64 pid{}, tid{};
     pm::getCurrentPidTid(&pid, &tid);
 
     /* Current track. */
-    list->addItem(this->m_status_bar, tsl::style::ListItemDefaultHeight * 2);
+    list->addItem(this->m_status_bar, StatusBar::HEIGHT);
 
-    /* Playlist. */
-    auto queue_button = new tsl::elm::ListItem("Playlist");
+    /* Queue (current playback queue). */
+    auto queue_button = new tsl::elm::ListItem("Queue");
     queue_button->setClickListener([](u64 keys) {
         if (keys & HidNpadButton_A) {
             tsl::changeTo<PlaylistGui>();
@@ -36,19 +39,28 @@ tsl::elm::Element *MainGui::createUI() {
     });
     list->addItem(queue_button);
 
-    /* Browser. */
-    auto browser_button = new tsl::elm::ListItem("Music browser");
-    browser_button->setClickListener([](u64 keys) {
+    /* Streamfin: browse the Jellyfin library (Shuffle All / Playlists / Artists)
+       and start playback through the existing tune IPC. */
+    auto browse_button = new tsl::elm::ListItem("Browse Jellyfin");
+    browse_button->setClickListener([](u64 keys) {
         if (keys & HidNpadButton_A) {
-            tsl::changeTo<BrowserGui>();
+            tsl::changeTo<PickerGui>();
             return true;
         }
         return false;
     });
-    list->addItem(browser_button);
+    list->addItem(browse_button);
 
-    /* Volume indicator */
-    list->addItem(new tsl::elm::CategoryHeader("Volume Control"));
+    /* Settings / sign-in. */
+    auto settings_button = new tsl::elm::ListItem("Settings");
+    settings_button->setClickListener([](u64 keys) {
+        if (keys & HidNpadButton_A) {
+            tsl::changeTo<SettingsGui>();
+            return true;
+        }
+        return false;
+    });
+    list->addItem(settings_button);
 
     /* Get initial volume. */
     float tune_volume = 1.f;
@@ -59,7 +71,7 @@ tsl::elm::Element *MainGui::createUI() {
     tuneGetTitleVolume(&title_volume);
     tuneGetDefaultTitleVolume(&default_title_volume);
 
-    auto tune_volume_slider = new ElmVolume("\uE13C", "Tune Volume", num_steps);
+    auto tune_volume_slider = new ElmVolume("\uE13C", "Music Volume", num_steps);
     tune_volume_slider->setProgress(tune_volume * num_steps);
     tune_volume_slider->setValueChangedListener([](u8 value){
         const float volume = float(value) / float(num_steps);
@@ -67,76 +79,16 @@ tsl::elm::Element *MainGui::createUI() {
     });
     list->addItem(tune_volume_slider);
 
-    // empty pid means we are qlaunch :)
-    if (tid && pid) {
-        auto title_volume_slider = new ElmVolume("\uE13C", "Game Volume", num_steps);
-        title_volume_slider->setProgress(title_volume * num_steps);
-        title_volume_slider->setValueChangedListener([tid](u8 value){
-            const float volume = float(value) / float(num_steps);
-            tuneSetTitleVolume(volume);
-            config::set_title_volume(tid, volume);
-        });
-        list->addItem(title_volume_slider);
-    }
-
-    auto default_title_volume_slider = new ElmVolume("\uE13C", "Game Volume (default)", num_steps);
-    default_title_volume_slider->setProgress(default_title_volume * num_steps);
-    default_title_volume_slider->setValueChangedListener([](u8 value){
+    /* Game Volume \u2014 how loud the running game/app is while music plays over it. */
+    auto game_volume_slider = new ElmVolume("\uE13C", "Game Volume", num_steps);
+    game_volume_slider->setProgress(default_title_volume * num_steps);
+    game_volume_slider->setValueChangedListener([](u8 value){
         const float volume = float(value) / float(num_steps);
         tuneSetDefaultTitleVolume(volume);
     });
-    list->addItem(default_title_volume_slider);
+    list->addItem(game_volume_slider);
 
-    list->addItem(new tsl::elm::CategoryHeader("Play / Pause"));
-
-    /* Per title tune toggle. */
-    auto tune_play = new tsl::elm::ToggleListItem("Tune", config::get_title_enabled(tid), "Play", "Pause");
-    tune_play->setStateChangedListener([tid](bool new_value) {
-        config::set_title_enabled(tid, new_value);
-        if (new_value) {
-            tunePlay();
-        } else {
-            tunePause();
-        }
-    });
-    list->addItem(tune_play);
-
-    /* Default title tune toggle. */
-    auto tune_default_play = new tsl::elm::ToggleListItem("Tune (default)", config::get_title_enabled_default(), "Play", "Pause");
-    tune_default_play->setStateChangedListener([](bool new_value) {
-        config::set_title_enabled_default(new_value);
-        if (new_value) {
-            tunePlay();
-        } else {
-            tunePause();
-        }
-    });
-    list->addItem(tune_default_play);
-
-    list->addItem(new tsl::elm::CategoryHeader("Misc"));
-
-    auto startup_button = new tsl::elm::ListItem("Remove start up file");
-    startup_button->setClickListener([frame](u64 keys) {
-        if (keys & HidNpadButton_A) {
-            char path[512];
-            if (config::get_load_path(path, sizeof(path))) {
-                config::set_load_path("");
-                const auto* p = path;
-                if (auto ext = std::strrchr(path, '/')) {
-                    p = ext + 1;
-                }
-
-                frame->setToast("Removed start up file", p);
-            } else {
-                frame->setToast("Failed to remove start up file", "No start up file set in config");
-            }
-            return true;
-        }
-        return false;
-    });
-    list->addItem(startup_button);
-
-    auto exit_button = new tsl::elm::ListItem("Close sys-tune");
+    auto exit_button = new tsl::elm::ListItem("Close Streamfin");
     exit_button->setClickListener([](u64 keys) {
         if (keys & HidNpadButton_A) {
             tuneQuit();

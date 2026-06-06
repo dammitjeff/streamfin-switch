@@ -38,4 +38,12 @@ void set_default_title_volume(float value);
 auto get_load_path(char* out, int max_len) -> int;
 void set_load_path(const char* path);
 
+// Jellyfin sign-in (shared by overlay + sysmodule). get_* return string length.
+auto get_jelly_server(char* out, int max_len) -> int;   // "host:port"
+void set_jelly_server(const char* value);
+auto get_jelly_token(char* out, int max_len) -> int;
+void set_jelly_token(const char* value);
+auto get_jelly_userid(char* out, int max_len) -> int;
+void set_jelly_userid(const char* value);
+
 }

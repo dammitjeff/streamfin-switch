@@ -1,5 +1,5 @@
 export GITHASH 		:= $(shell git rev-parse --short HEAD)
-export VERSION 		:= 2.0.0
+export VERSION 		:= 1.0.0
 export API_VERSION 	:= 4
 export WANT_FLAC 	:= 1
 export WANT_MP3 	:= 1
@@ -12,7 +12,7 @@ clean:
 	$(MAKE) -C overlay clean
 	$(MAKE) -C sys-tune clean
 	-rm -r dist
-	-rm sys-tune-*-*.zip
+	-rm streamfin-*-*.zip
 
 overlay:
 	$(MAKE) -C overlay
@@ -25,12 +25,12 @@ module:
 
 dist: all
 	mkdir -p dist/switch/.overlays
-	mkdir -p dist/atmosphere/contents/4200000000000000/flags
-	touch dist/atmosphere/contents/4200000000000000/flags/boot2.flag
-	cp sys-tune/sys-tune.nsp dist/atmosphere/contents/4200000000000000/exefs.nsp
-	cp overlay/sys-tune-overlay.ovl dist/switch/.overlays/
-	cp sys-tune/toolbox.json dist/atmosphere/contents/4200000000000000/
-	cd dist; zip -r sys-tune-$(VERSION)-$(GITHASH).zip ./**/; cd ../;
+	mkdir -p dist/atmosphere/contents/420000000046494E/flags
+	touch dist/atmosphere/contents/420000000046494E/flags/boot2.flag
+	cp sys-tune/sys-tune.nsp dist/atmosphere/contents/420000000046494E/exefs.nsp
+	cp overlay/streamfin-overlay.ovl dist/switch/.overlays/
+	cp sys-tune/toolbox.json dist/atmosphere/contents/420000000046494E/
+	cd dist; zip -r streamfin-$(VERSION)-$(GITHASH).zip ./**/; cd ../;
 	-hactool -t nso sys-tune/sys-tune.nso
 
 .PHONY: all overlay module

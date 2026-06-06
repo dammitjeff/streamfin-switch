@@ -8,7 +8,7 @@ Service g_tune;
 
 Result tuneInitialize() {
     Handle handle = 0;
-    Result rc = svcConnectToNamedPort(&handle, "tune");
+    Result rc = svcConnectToNamedPort(&handle, "strmfin");
     if (R_SUCCEEDED(rc))
         serviceCreate(&g_tune, handle);
     return rc;

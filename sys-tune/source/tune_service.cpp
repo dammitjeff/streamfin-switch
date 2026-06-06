@@ -148,7 +148,7 @@ namespace tune {
     }
 
     Result InitializeServer() {
-        return ipcServerInit(&g_server, "tune", 2);
+        return ipcServerInit(&g_server, "strmfin", 2);
     }
 
     Result ExitServer() {

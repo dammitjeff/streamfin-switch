@@ -105,4 +105,30 @@ void set_load_path(const char* path) {
     ini_puts("config", "load_path", path, CONFIG_PATH);
 }
 
+/* ---- Jellyfin sign-in (shared by overlay + sysmodule) ---- */
+
+auto get_jelly_server(char* out, int max_len) -> int {
+    return ini_gets("jelly", "server", "", out, max_len, CONFIG_PATH);
+}
+void set_jelly_server(const char* value) {
+    create_config_dir();
+    ini_puts("jelly", "server", value, CONFIG_PATH);
+}
+
+auto get_jelly_token(char* out, int max_len) -> int {
+    return ini_gets("jelly", "token", "", out, max_len, CONFIG_PATH);
+}
+void set_jelly_token(const char* value) {
+    create_config_dir();
+    ini_puts("jelly", "token", value, CONFIG_PATH);
+}
+
+auto get_jelly_userid(char* out, int max_len) -> int {
+    return ini_gets("jelly", "userid", "", out, max_len, CONFIG_PATH);
+}
+void set_jelly_userid(const char* value) {
+    create_config_dir();
+    ini_puts("jelly", "userid", value, CONFIG_PATH);
+}
+
 }

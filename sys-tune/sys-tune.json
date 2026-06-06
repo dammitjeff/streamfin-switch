@@ -1,8 +1,8 @@
 {
-	"name": "sys-tune",
-	"title_id": "0x4200000000000000",
-	"title_id_range_min": "0x4200000000000000",
-	"title_id_range_max": "0x4200000000000000",
+	"name": "Streamfin",
+	"title_id": "0x420000000046494E",
+	"title_id_range_min": "0x420000000046494E",
+	"title_id_range_max": "0x420000000046494E",
 	"main_thread_stack_size": "0x00004000",
 	"main_thread_priority": 48,
 	"default_cpu_id": 3,
@@ -15,7 +15,7 @@
 		"permissions": "0xFFFFFFFFFFFFFFFF"
 	},
 	"service_host": [
-		"tune"
+		"strmfin"
 	],
 	"service_access": [
 		"*"

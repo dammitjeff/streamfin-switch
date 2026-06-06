@@ -11,9 +11,21 @@ enum class SourceType {
     WAV,
 };
 
+// Pluggable byte backend behind Source: the decoders never know if bytes come
+// from an SD file or an HTTP stream. read() must fetch up to `size` bytes at an
+// absolute offset and return how many it got; size() is the total length.
+struct IoBackend {
+    virtual ~IoBackend() {}
+    virtual u64 read(s64 offset, void *buf, u64 size) = 0;
+    virtual s64 size() = 0;
+};
+
+std::unique_ptr<IoBackend> MakeFileBackend(FsFile &&file);
+std::unique_ptr<IoBackend> MakeHttpBackend(const char *path); // path = request path on jelly server
+
 class Source {
   private:
-    FsFile m_file = {};
+    std::unique_ptr<IoBackend> m_backend;
     s64 m_offset = 0;
     s64 m_size = 0;
 
@@ -50,7 +62,7 @@ class Source {
     bool m_native_stream{};
 
   public:
-    Source(FsFile &&file);
+    Source(std::unique_ptr<IoBackend> backend);
     virtual ~Source();
 
     bool SetupResampler(int output_channels, int output_sample_rate);
@@ -72,4 +84,9 @@ class Source {
 };
 
 std::unique_ptr<Source> OpenFile(const char *path);
+// Open a streamed Jellyfin track. `path` is a queue entry of the form
+// "jelly://<fmt>/<id>" (fmt = mp3|flac|wav). Builds the stream URL + HttpBackend.
+std::unique_ptr<Source> OpenJelly(const char *path);
 SourceType GetSourceType(const char* path);
+// True if a queue entry is a Jellyfin stream rather than an SD path.
+bool IsJellyPath(const char* path);

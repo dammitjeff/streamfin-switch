@@ -2,13 +2,17 @@
 #include "tune.h"
 #include "gui_error.hpp"
 #include "gui_main.hpp"
+#include "gui_settings.hpp"
+#include "jelly_ovl.hpp"
+#include "art_loader.hpp"
+#include "meta_cache.hpp"
 #include "sdmc/sdmc.hpp"
 #include "pm/pm.hpp"
 #include "config/config.hpp"
 
 #include <tesla.hpp>
 
-class SysTuneOverlay final : public tsl::Overlay {
+class StreamfinOverlay final : public tsl::Overlay {
   private:
     const char *msg = nullptr;
     Result fail     = 0;
@@ -26,7 +30,7 @@ class SysTuneOverlay final : public tsl::Overlay {
         if (R_VALUE(rc) == KERNELRESULT(NotFound) || R_VALUE(rc) == KERNELRESULT(ConnectionRefused)) {
             u64 pid = 0;
             const NcmProgramLocation programLocation{
-                .program_id = 0x4200000000000000,
+                .program_id = 0x420000000046494E,
                 .storageID  = NcmStorageId_None,
             };
             rc = pmshellInitialize();
@@ -55,14 +59,22 @@ class SysTuneOverlay final : public tsl::Overlay {
             return;
         }
 
+        /* Streamfin: sockets for Jellyfin metadata/art lookups. */
+        jelly_ovl::Init();
+        art_loader::Init();   // background cover-art worker + prefetch
+        meta_cache::Init();   // background track-name resolver + cache
+
         u32 api;
         if (R_FAILED(tuneGetApiVersion(&api)) || api != TUNE_API_VERSION) {
             this->msg = "   Unsupported\n"
-                        "sys-tune version!";
+                        "sysmodule version!";
         }
     }
 
     void exitServices() override {
+        meta_cache::Exit();
+        art_loader::Exit();
+        jelly_ovl::Exit();
         sdmc::Close();
         pm::Exit();
         tuneExit();
@@ -71,12 +83,18 @@ class SysTuneOverlay final : public tsl::Overlay {
     std::unique_ptr<tsl::Gui> loadInitialGui() override {
         if (this->msg) {
             return std::make_unique<ErrorGui>(this->msg, this->fail);
-        } else {
-            return std::make_unique<MainGui>();
         }
+        /* First-time setup: no saved token -> go straight to sign-in.
+           This is a local config-file read only; no network. */
+        char tok[8] = {};
+        config::get_jelly_token(tok, sizeof tok);
+        if (tok[0] == '\0') {
+            return std::make_unique<SettingsGui>();
+        }
+        return std::make_unique<MainGui>();
     }
 };
 
 int main(int argc, char **argv) {
-    return tsl::loop<SysTuneOverlay>(argc, argv);
+    return tsl::loop<StreamfinOverlay>(argc, argv);
 }
