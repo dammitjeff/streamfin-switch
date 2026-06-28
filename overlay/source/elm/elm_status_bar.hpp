@@ -23,7 +23,7 @@ class StatusBar final : public tsl::elm::Element {
     u8 *m_art = nullptr;      // BORROWED RGBA cover art (owned by art_loader; never free)
     int m_art_w = 0, m_art_h = 0;
     UiPhase m_phase = UiPhase::Playing;   // last logged phase (for transition logging)
-    int m_focus = 2;          // selected control: 0=repeat 1=prev 2=play 3=next 4=shuffle
+    int m_focus = 2;          // 0=repeat 1=prev 2=play 3=next 4=shuffle 5=seek bar
     std::string m_scroll_text;
     u32 m_text_width;
     u32 m_scroll_offset;
@@ -64,6 +64,8 @@ class StatusBar final : public tsl::elm::Element {
     ALWAYS_INLINE s32 ArtBottom()  { return ArtY() + ArtH(); }
     ALWAYS_INLINE s32 TitleY()     { return ArtBottom() + 32; }
     ALWAYS_INLINE s32 SeekY()      { return ArtBottom() + 66; }
+    ALWAYS_INLINE s32 SeekBarX()   { return this->getX() + 15; }
+    ALWAYS_INLINE u32 SeekBarLen() { return this->getWidth() - 30; }
     ALWAYS_INLINE s32 ControlsY()  { return ArtBottom() + 128; }
     ALWAYS_INLINE s32 CtlHalf()    { return ArtW() / 2 - 8; }
 
@@ -83,6 +85,8 @@ class StatusBar final : public tsl::elm::Element {
                      default: return GetPlayStateX(); }
     }
     void ActivateControl(int index);
+    void SeekToPercentage(float pct);
+    void SeekBySeconds(int delta_sec);
     const AlphaSymbol &GetPlaybackSymbol();
 
     // update() helpers — one branch of "what is the current item?" each.

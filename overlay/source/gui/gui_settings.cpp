@@ -48,6 +48,53 @@ namespace {
         }
     };
 
+    constexpr int SEEK_SKIP_OPTIONS[] = { 5, 10, 15, 30, 60 };
+    constexpr int SEEK_SKIP_COUNT = sizeof(SEEK_SKIP_OPTIONS) / sizeof(SEEK_SKIP_OPTIONS[0]);
+
+    int SeekSkipIndex(int seconds) {
+        for (int i = 0; i < SEEK_SKIP_COUNT; i++) {
+            if (SEEK_SKIP_OPTIONS[i] == seconds)
+                return i;
+        }
+        return 1;   // 10 sec default
+    }
+
+    void FormatSeekSkip(int seconds, char *buf, size_t len) {
+        if (seconds >= 60)
+            std::snprintf(buf, len, "%d min", seconds / 60);
+        else
+            std::snprintf(buf, len, "%d sec", seconds);
+    }
+
+    class SeekSkipItem final : public tsl::elm::ListItem {
+        int m_index;
+
+        void RefreshValue() {
+            char buf[16];
+            FormatSeekSkip(SEEK_SKIP_OPTIONS[this->m_index], buf, sizeof buf);
+            this->setValue(buf);
+        }
+
+      public:
+        SeekSkipItem() : ListItem("Seek Skip") {
+            this->m_index = SeekSkipIndex(config::get_seek_skip_seconds());
+            this->RefreshValue();
+        }
+
+        bool onClick(u64 keys) override {
+            if (keys & (HidNpadButton_A | HidNpadButton_Right)) {
+                this->m_index = (this->m_index + 1) % SEEK_SKIP_COUNT;
+            } else if (keys & HidNpadButton_Left) {
+                this->m_index = (this->m_index + SEEK_SKIP_COUNT - 1) % SEEK_SKIP_COUNT;
+            } else {
+                return ListItem::onClick(keys);
+            }
+            config::set_seek_skip_seconds(SEEK_SKIP_OPTIONS[this->m_index]);
+            this->RefreshValue();
+            return true;
+        }
+    };
+
 }
 
 SettingsGui::SettingsGui() {
@@ -119,6 +166,8 @@ tsl::elm::Element *SettingsGui::createUI() {
         return false;
     });
     list->addItem(out);
+
+    list->addItem(new SeekSkipItem());
 
     auto upd = new tsl::elm::ListItem("Check for Updates");
     upd->setClickListener([this](u64 keys) {

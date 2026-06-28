@@ -131,4 +131,17 @@ void set_jelly_userid(const char* value) {
     ini_puts("jelly", "userid", value, CONFIG_PATH);
 }
 
+auto get_seek_skip_seconds() -> int {
+    const int v = (int)ini_getl("config", "seek_skip_seconds", 10, CONFIG_PATH);
+    switch (v) {
+        case 5: case 10: case 15: case 30: case 60: return v;
+        default: return 10;
+    }
+}
+
+void set_seek_skip_seconds(int value) {
+    create_config_dir();
+    ini_putl("config", "seek_skip_seconds", value, CONFIG_PATH);
+}
+
 }
