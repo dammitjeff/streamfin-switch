@@ -231,7 +231,7 @@ namespace tune::impl {
 
         float g_title_volume = 1.f;
         float g_default_title_volume = 1.f;
-        bool g_use_title_volume = true;
+        bool g_use_title_volume = false;
 
         constexpr auto AUDIO_FREQ          = 48000;
         constexpr auto AUDIO_CHANNEL_COUNT = 2;
@@ -469,6 +469,8 @@ namespace tune::impl {
                 if (config::has_title_volume(new_tid)) {
                     g_use_title_volume = true;
                     SetTitleVolume(std::clamp(config::get_title_volume(new_tid), 0.f, VOLUME_MAX));
+                } else {
+                    g_use_title_volume = false;
                 }
 
                 // TODO(TJ): fade song in rather than abruptly playing to avoid jump scares
