@@ -46,4 +46,8 @@ void set_jelly_token(const char* value);
 auto get_jelly_userid(char* out, int max_len) -> int;
 void set_jelly_userid(const char* value);
 
+// Overlay seek-bar skip interval in seconds (5, 10, 15, 30, or 60).
+auto get_seek_skip_seconds() -> int;
+void set_seek_skip_seconds(int value);
+
 }

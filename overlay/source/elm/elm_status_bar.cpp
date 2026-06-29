@@ -92,31 +92,36 @@ void StatusBar::draw(tsl::gfx::Renderer *renderer) {
     }
 
     /* Seek bar + times (full content width). */
-    const s32 bar_x   = this->getX() + 15;
-    const u32 bar_len = this->getWidth() - 30;
+    const s32 bar_x   = SeekBarX();
+    const u32 bar_len = SeekBarLen();
     const s32 bar_y   = SeekY();
-    renderer->drawRect(bar_x, bar_y, bar_len, 3, 0xF666);   // dim track
-    if (this->m_percentage > 0) {
-        // Filled portion as a Jellyfin blue->purple gradient (RGBA4444: 0x(a)(b)(g)(r)).
-        // blue #00A4DC -> r0 gA bD,  purple #AA5CC3 -> rA g5 bC.
-        const u32 fill = (u32)(bar_len * this->m_percentage);
-        for (u32 i = 0; i < fill; i++) {
-            const float t = bar_len > 0 ? (float)i / (float)bar_len : 0.f;
-            const u8 r = (u8)(0x0 + 0xA * t);
-            const u8 g = (u8)(0xA - 0x5 * t);
-            const u8 b = (u8)(0xD - 0x1 * t);
-            renderer->drawRect(bar_x + (s32)i, bar_y - 2, 1, 7, (u16)((0xF << 12) | (b << 8) | (g << 4) | r));
+    constexpr s32 kSeekThumbRadius = 7;
+    const s32 track_cy = bar_y + 1;   // vertical center of the 7px fill (bar_y - 2 .. bar_y + 4)
+    const bool seek_focused = (this->m_focus == 5);
+    const tsl::Color seek_fill = {0x0, 0xA, 0xD, 0xF};   // Jellyfin blue #00A4DC
+    if (seek_focused) {
+        renderer->drawRect(bar_x - 1, bar_y - 3, bar_len + 2, 9, a({0x0, 0xA, 0xD, 0xA}));
+    }
+    renderer->drawRect(bar_x, bar_y, bar_len, 3, seek_focused ? 0xFCCC : 0xF666);   // dim track
+    const u32 fill = this->m_stats.total_frames > 0
+        ? (u32)(bar_len * this->m_percentage) : 0;
+    if (fill > 0) {
+        renderer->drawRect(bar_x, bar_y - 2, fill, 7, a(seek_fill));
+    }
+    if (this->m_stats.total_frames > 0) {
+        const s32 thumb_x = bar_x + (s32)fill;
+        if (seek_focused) {
+            renderer->drawCircle(thumb_x, track_cy, kSeekThumbRadius + 4, true, 0xFFFF);
+            renderer->drawCircle(thumb_x, track_cy, kSeekThumbRadius, true, a(seek_fill));
+        } else {
+            renderer->drawCircle(thumb_x, track_cy, kSeekThumbRadius, true, a(seek_fill));
         }
-        const float tp = this->m_percentage;
-        const u8 r = (u8)(0x0 + 0xA * tp), g = (u8)(0xA - 0x5 * tp), b = (u8)(0xD - 0x1 * tp);
-        renderer->drawCircle(bar_x + (s32)fill, bar_y + 1, 4, true, (u16)((0xF << 12) | (b << 8) | (g << 4) | r));
     }
     renderer->drawString(current_buffer, false, bar_x, bar_y + 26, 18, 0xffff);
     renderer->drawString(total_buffer, false, this->getX() + this->getWidth() - 55, bar_y + 26, 18, 0xffff);
 
-    /* Subtle faded square behind the selected control, centered on the glyph
-       (AlphaSymbol::draw centers on x,y). */
-    {
+    /* Subtle faded square behind the selected transport control. */
+    if (this->m_focus != 5) {
         const s32 hs = 40;
         renderer->drawRect(FocusX(this->m_focus) - hs / 2, ControlsY() - hs / 2, hs, hs, 0x4FFF);
     }
@@ -142,11 +147,20 @@ void StatusBar::layout(u16 parentX, u16 parentY, u16 parentWidth, u16 parentHeig
 
 bool StatusBar::onClick(u64 keys) {
     u8 handled = 0;
-    /* Left/Right move the control cursor; A activates the selected control.
-       X/Y stay as quick repeat/shuffle shortcuts. */
-    if (keys & HidNpadButton_Left)  { if (this->m_focus > 0) this->m_focus--; handled++; }
-    if (keys & HidNpadButton_Right) { if (this->m_focus < 4) this->m_focus++; handled++; }
-    if (keys & HidNpadButton_A)     { this->ActivateControl(this->m_focus); handled++; }
+    /* Up/Down switch between the seek bar and transport controls.
+       On the seek bar, Left/Right skip within the track. */
+    if (keys & HidNpadButton_Up)   { if (this->m_focus < 5) this->m_focus = 5; handled++; }
+    if (keys & HidNpadButton_Down) { if (this->m_focus == 5) this->m_focus = 2; handled++; }
+
+    if (this->m_focus == 5) {
+        if (keys & HidNpadButton_Left)  { this->Backward(); handled++; }
+        if (keys & HidNpadButton_Right) { this->Forward();  handled++; }
+    } else {
+        if (keys & HidNpadButton_Left)  { if (this->m_focus > 0) this->m_focus--; handled++; }
+        if (keys & HidNpadButton_Right) { if (this->m_focus < 4) this->m_focus++; handled++; }
+        if (keys & HidNpadButton_A)     { this->ActivateControl(this->m_focus); handled++; }
+    }
+
     if (keys & HidNpadButton_X)     { this->CycleRepeat();  handled++; }
     if (keys & HidNpadButton_Y)     { this->CycleShuffle(); handled++; }
     return handled;
@@ -173,6 +187,20 @@ bool StatusBar::onTouch(tsl::elm::TouchEvent event, s32 currX, s32 currY, s32 pr
 
         if (Element::getInputMode() == tsl::InputMode::Touch) {
             u16 handled = 0;
+
+            const s32 bar_x = SeekBarX();
+            const u32 bar_len = SeekBarLen();
+            const s32 bar_y = SeekY();
+            if (currY >= bar_y - 10 && currY <= bar_y + 35
+                && currX >= bar_x && currX <= bar_x + (s32)bar_len
+                && this->m_stats.total_frames > 0) {
+                const float pct = float(currX - bar_x) / float(bar_len);
+                this->SeekToPercentage(pct);
+                this->m_focus = 5;
+                this->m_clickAnimationProgress = 0;
+                return true;
+            }
+
             if (TOUCHED(Repeat)) {
                 this->m_focus = 0;
                 this->CycleRepeat();
@@ -238,7 +266,7 @@ void StatusBar::ResolveJellyTrack() {
     id = id ? id + 1 : path_buffer + 8;
 
     if (std::strcmp(id, this->m_last_id) != 0) {
-        std::strncpy(this->m_last_id, id, sizeof(this->m_last_id) - 1);
+        std::snprintf(this->m_last_id, sizeof(this->m_last_id), "%s", id);
         std::snprintf(this->m_name_buf, sizeof(this->m_name_buf), "%s", id);   // placeholder until resolved
         this->m_current_track = this->m_name_buf;
         this->m_name_resolved = false;
@@ -379,13 +407,35 @@ void StatusBar::Next() {
 }
 
 void StatusBar::Forward() {
-    u32 next = std::min(this->m_stats.current_frame + (this->m_stats.total_frames / 10), this->m_stats.total_frames);
-    tuneSeek(next);
+    this->SeekBySeconds(config::get_seek_skip_seconds());
 }
 
 void StatusBar::Backward() {
-    u32 next = std::max(s64(this->m_stats.current_frame) - s64(this->m_stats.total_frames / 10), s64(0));
-    tuneSeek(next);
+    this->SeekBySeconds(-config::get_seek_skip_seconds());
+}
+
+void StatusBar::SeekBySeconds(int delta_sec) {
+    if (this->m_stats.total_frames == 0 || this->m_stats.sample_rate == 0)
+        return;
+    const s64 next = std::clamp(
+        s64(this->m_stats.current_frame) + s64(delta_sec) * s64(this->m_stats.sample_rate),
+        s64(0), s64(this->m_stats.total_frames));
+    this->SeekToPercentage(float(next) / float(this->m_stats.total_frames));
+}
+
+void StatusBar::SeekToPercentage(float pct) {
+    if (this->m_stats.total_frames == 0)
+        return;
+    pct = std::clamp(pct, 0.f, 1.f);
+    const u32 frame = (u32)(pct * float(this->m_stats.total_frames));
+    tuneSeek(frame);
+    this->m_percentage = pct;
+    this->m_stats.current_frame = frame;
+
+    const u32 current = frame / this->m_stats.sample_rate;
+    const u32 total = this->m_stats.total_frames / this->m_stats.sample_rate;
+    std::snprintf(current_buffer, sizeof(current_buffer), "%d:%02d", current / 60, current % 60);
+    std::snprintf(total_buffer, sizeof(total_buffer), "%d:%02d", total / 60, total % 60);
 }
 
 const AlphaSymbol &StatusBar::GetPlaybackSymbol() {
